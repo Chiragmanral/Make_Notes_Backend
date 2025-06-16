@@ -3,6 +3,7 @@ const express = require("express");
 const mongoose = require("mongoose");
 const randomUrl = require("random-url"); 
 const cors = require("cors");
+const bcrypt = require("bcrypt");
 const app = express();
 const PORT = process.env.PORT || 5000;
 
@@ -39,16 +40,47 @@ const notesSchema = mongoose.Schema({
 
 const notes = mongoose.model("notes", notesSchema);
 
-const users = [{
-    name : "chirag",
-    password : "12345"
-}];
+const userSchema = mongoose.Schema({
+    email : {
+        type : String,
+        required : true
+    },
+    password : {
+        type : String,
+        required : true
+    }
+}, { timestamps : true });
 
-app.get("/users", (req, res) => {
-    res.json(users);
+const users = mongoose.model("users", userSchema);
+
+app.post("/signup", async (req, res) => {
+    const { email, password } = req.body;
+    try {
+        const hashedPassword = await bcrypt.hash(password, 10);
+        await users.create({
+            email,
+            password : hashedPassword
+        })
+        res.json({ success : true });
+    }
+    catch(err) {
+        console.error("There is some server issue!!", err);
+    }
+});
+
+app.post("/login", async (req, res) => {
+    const { email, password } = req.body;
+    try {
+        const user = await users.findOne({ email });
+        if(!user || (await bcrypt.compare(password, user.password) === false)) {
+            res.json({ success : false });
+        }
+        res.json({ success : true })
+    }
+    catch(err) {
+        console.error("There is some server issue!!", err);
+    }
 })
-
-
 
 setInterval(async () => {
   const currentTime = Date.now();
