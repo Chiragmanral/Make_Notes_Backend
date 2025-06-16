@@ -39,6 +39,17 @@ const notesSchema = mongoose.Schema({
 
 const notes = mongoose.model("notes", notesSchema);
 
+const users = [{
+    name : "chirag",
+    password : "12345"
+}];
+
+app.get("/users", (req, res) => {
+    res.json(users);
+})
+
+
+
 setInterval(async () => {
   const currentTime = Date.now();
   try {
