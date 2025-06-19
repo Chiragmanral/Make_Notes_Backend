@@ -31,7 +31,8 @@ const notesSchema = mongoose.Schema({
     },
     noteUrl : {
         type : String,
-        required : true
+        required : true,
+        unique : true
     },
     noteValidationTime : {
         type: Number,
@@ -43,7 +44,8 @@ const notes = mongoose.model("notes", notesSchema);
 const userSchema = mongoose.Schema({
     email : {
         type : String,
-        required : true
+        required : true,
+        unique : true
     },
     password : {
         type : String,
