@@ -4,6 +4,7 @@ const mongoose = require("mongoose");
 const randomUrl = require("random-url"); 
 const cors = require("cors");
 const bcrypt = require("bcrypt");
+const jwt = require("jsonwebtoken");
 const app = express();
 const PORT = process.env.PORT || 5000;
 
@@ -36,6 +37,9 @@ const notesSchema = mongoose.Schema({
     },
     noteValidationTime : {
         type: Number,
+    },
+    createdBy : {
+        type : mongoose.Schema.Types.ObjectId, ref : "users"
     }
 }, { timestamps : true }); 
 
@@ -70,19 +74,50 @@ app.post("/signup", async (req, res) => {
     }
 });
 
-app.post("/login", async (req, res) => {
+// app.post("/login", async (req, res) => {
+//     const { email, password } = req.body;
+//     try {
+//         const user = await users.findOne({ email });
+//         if(!user || (await bcrypt.compare(password, user.password) === false)) {
+//             res.json({ success : false });
+//         }
+//         res.json({ success : true })
+//     }
+//     catch(err) {
+//         console.error("There is some server issue!!", err);
+//     }
+// })
+
+app.post('/login', async (req, res) => {
     const { email, password } = req.body;
+
     try {
         const user = await users.findOne({ email });
-        if(!user || (await bcrypt.compare(password, user.password) === false)) {
-            res.json({ success : false });
+        if(!user || !(await bcrypt.compare(password, user.password))) {
+            return res.json({ success : false });
         }
-        res.json({ success : true })
+
+        const payload = { id : user._id };
+        const accessToken = jwt.sign(payload, process.env.ACCESS_TOKEN_SECRET);
+        return res.json({ success : true, token : accessToken });
     }
     catch(err) {
         console.error("There is some server issue!!", err);
+        return res.status(500).json({ success : false, error : "Server error"});
     }
 })
+
+function authenticateToken(req, res, next) {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
+    if(!token) return res.sendStatus(401);
+
+    jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, (err, userId) => {
+        if(err) return res.sendStatus(403);
+        req.user = userId;
+        next();
+    })
+}
 
 setInterval(async () => {
   const currentTime = Date.now();
@@ -100,14 +135,15 @@ setInterval(async () => {
   }
 }, 12 * 60 * 60 * 1000);
 
-app.post("/generateLink", async (req, res) => {
+app.post("/generateLink", authenticateToken, async (req, res) => {
     const body = req.body;
     const url = randomUrl("https");
 
     const payload = {
         noteText: body.noteText,
         notePassword: body.notePassword,
-        noteUrl: url
+        noteUrl: url,
+        createdBy : req.user.id
     };
 
     switch (body.noteDuration) {
@@ -132,7 +168,7 @@ app.post("/generateLink", async (req, res) => {
     res.json({ generatedLink : url});
 });
 
-app.post("/getNote", async (req, res) => {
+app.post("/getNote", authenticateToken, async (req, res) => {
     const { noteLinkCredential, passwordCredential } = req.body;
 
     try {
@@ -176,6 +212,16 @@ app.post("/getNote", async (req, res) => {
     }
 });
 
+app.get("myNotes", authenticateToken, async (req, res) => {
+    try {
+        const userNotes = await notes.find({ createdBy : req.user.id });
+        res.json({ notes : userNotes });
+    }
+    catch(err) {
+        console.error("Error fetching user notes : ", err);
+        res.status(500).json({ error : "Failed to fetch notes"});
+    }
+})
 
 app.listen(PORT, () => {
     console.log(`Server running on http://localhost:${PORT}`);
