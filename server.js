@@ -74,19 +74,17 @@ app.post("/signup", async (req, res) => {
     }
 });
 
-// app.post("/login", async (req, res) => {
-//     const { email, password } = req.body;
-//     try {
-//         const user = await users.findOne({ email });
-//         if(!user || (await bcrypt.compare(password, user.password) === false)) {
-//             res.json({ success : false });
-//         }
-//         res.json({ success : true })
-//     }
-//     catch(err) {
-//         console.error("There is some server issue!!", err);
-//     }
-// })
+function authenticateToken(req, res, next) {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
+    if(!token) return res.sendStatus(401);
+
+    jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, (err, userId) => {
+        if(err) return res.sendStatus(403);
+        req.user = userId;
+        next();
+    })
+}
 
 app.post('/login', async (req, res) => {
     const { email, password } = req.body;
@@ -107,17 +105,6 @@ app.post('/login', async (req, res) => {
     }
 })
 
-function authenticateToken(req, res, next) {
-    const authHeader = req.headers['authorization'];
-    const token = authHeader && authHeader.split(' ')[1];
-    if(!token) return res.sendStatus(401);
-
-    jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, (err, userId) => {
-        if(err) return res.sendStatus(403);
-        req.user = userId;
-        next();
-    })
-}
 
 setInterval(async () => {
   const currentTime = Date.now();
@@ -212,7 +199,7 @@ app.post("/getNote", authenticateToken, async (req, res) => {
     }
 });
 
-app.get("myNotes", authenticateToken, async (req, res) => {
+app.get("/myNotes", authenticateToken, async (req, res) => {
     try {
         const userNotes = await notes.find({ createdBy : req.user.id });
         res.json({ notes : userNotes });
