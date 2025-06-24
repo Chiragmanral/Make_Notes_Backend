@@ -96,7 +96,7 @@ app.post('/login', async (req, res) => {
         }
 
         const payload = { id : user._id };
-        const accessToken = jwt.sign(payload, process.env.ACCESS_TOKEN_SECRET);
+        const accessToken = jwt.sign(payload, process.env.ACCESS_TOKEN_SECRET, { expiresIn : "1hr" });
         return res.json({ success : true, token : accessToken });
     }
     catch(err) {
@@ -104,7 +104,6 @@ app.post('/login', async (req, res) => {
         return res.status(500).json({ success : false, error : "Server error"});
     }
 })
-
 
 setInterval(async () => {
   const currentTime = Date.now();
@@ -126,9 +125,10 @@ app.post("/generateLink", authenticateToken, async (req, res) => {
     const body = req.body;
     const url = randomUrl("https");
 
+    const hashedPassword = await bcrypt.hash(body.notePassword, 10);
     const payload = {
         noteText: body.noteText,
-        notePassword: body.notePassword,
+        notePassword: hashedPassword,
         noteUrl: url,
         createdBy : req.user.id
     };
@@ -166,7 +166,7 @@ app.post("/getNote", authenticateToken, async (req, res) => {
         }
 
         // Password verification (if password was set)
-        if (note.notePassword && note.notePassword !== passwordCredential) {
+        if (note.notePassword && !(await bcrypt.compare(passwordCredential, note.notePassword))) {
             return res.json({ msg: "Your credentials are wrong!!" });
         }
 
