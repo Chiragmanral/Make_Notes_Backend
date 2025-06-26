@@ -8,7 +8,14 @@ const jwt = require("jsonwebtoken");
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-app.use(cors());
+// app.use(cors());
+app.use(cors({
+  origin: ["https://make-notes-chirag.netlify.app", "https://make-notes-frontend-67mis7trj-chirag-singh-manrals-projects.vercel.app"],  // allow only your Netlify frontend
+  credentials: true,                                  // allow Authorization header
+  methods: ["GET","POST","PUT","DELETE","OPTIONS"],
+  allowedHeaders: ["Content-Type","Authorization"]
+}));
+
 app.use(express.urlencoded({ extended: false }));
 app.use(express.json());
 
