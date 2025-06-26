@@ -116,6 +116,7 @@ app.post('/login', async (req, res) => {
     try {
         const user = await users.findOne({ email });
         if (!user || !(await bcrypt.compare(password, user.password))) {
+            console.log("1");
             return res.json({ success: false });
         }
 
@@ -124,7 +125,7 @@ app.post('/login', async (req, res) => {
         return res.json({ success: true, token: accessToken });
     }
     catch (err) {
-        console.error("There is some server issue!!", err);
+        console.log("There is some server issue!!");
         return res.json({ success: false });
     }
 })
