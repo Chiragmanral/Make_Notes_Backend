@@ -123,7 +123,6 @@ app.post('/login', async (req, res) => {
     try {
         const user = await users.findOne({ email });
         if (!user || !(await bcrypt.compare(password, user.password))) {
-            console.log("1");
             return res.json({ success: false });
         }
 
