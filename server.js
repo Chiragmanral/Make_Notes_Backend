@@ -56,30 +56,41 @@ const userSchema = mongoose.Schema({
     password: {
         type: String,
         required: true
+    },
+    refreshToken: {
+        type: String
     }
 }, { timestamps: true });
 
 const users = mongoose.model("users", userSchema);
 
-app.post("/signup", async (req, res) => {
-    const { email, password } = req.body;
-    try {
-        // if user already exists
-        const existingUser = await users.findOne({ email });
-        if (existingUser) return res.status(400).json({ success: false, msg: "Email already registered" });
+setInterval(cleanExpiredNotes, 4 * 60 * 60 * 1000);
 
-        // if user already does not exists, create the user
-        const hashedPassword = await bcrypt.hash(password, 10);
-        await users.create({
-            email,
-            password: hashedPassword
-        })
-        res.json({ success: true });
+async function cleanExpiredNotes() {
+    const currentTime = Date.now();
+
+    try {
+        const result = await notes.deleteMany({
+            noteValidationTime: { $exists: true, $lt: currentTime },
+            $or: [
+                { noteViewOnce: { $ne: true } },
+                { noteViewOnce: { $exists: false } }
+            ],
+            $or: [
+                { noteViewAlways: { $ne: true } },
+                { noteViewAlways: { $exists: false } }
+            ]
+        });
+
+        if (result.deletedCount > 0) {
+            console.log(`✅ Auto-cleanup: Deleted ${result.deletedCount} expired notes.`);
+        } else {
+            console.log("ℹ️ Auto-cleanup: No expired notes found.");
+        }
+    } catch (error) {
+        console.error("❌ Auto-cleanup failed:", error);
     }
-    catch (err) {
-        console.error("There is some server issue!!", err);
-    }
-});
+}
 
 function authenticateToken(req, res, next) {
     const authHeader = req.headers['authorization'];
@@ -108,9 +119,37 @@ function authenticateToken(req, res, next) {
     });
 }
 
+function generateAccessToken(payload) {
+    return jwt.sign(payload, process.env.ACCESS_TOKEN_SECRET, { expiresIn: "15m" });
+}
+
+function generateRefreshToken(payload) {
+    return jwt.sign(payload, process.env.REFRESH_TOKEN_SECRET, { expiresIn: "7d" });
+}
+
 app.get("/isLoggedIn", authenticateToken, (req, res) => {
     res.json({ loggedIn: true });
 })
+
+app.post("/signup", async (req, res) => {
+    const { email, password } = req.body;
+    try {
+        // if user already exists
+        const existingUser = await users.findOne({ email });
+        if (existingUser) return res.status(400).json({ success: false, msg: "Email already registered" });
+
+        // if user already does not exists, create the user
+        const hashedPassword = await bcrypt.hash(password, 10);
+        await users.create({
+            email,
+            password: hashedPassword
+        })
+        res.json({ success: true });
+    }
+    catch (err) {
+        console.error("There is some server issue!!", err);
+    }
+});
 
 app.post('/login', async (req, res) => {
     const { email, password } = req.body;
@@ -122,8 +161,11 @@ app.post('/login', async (req, res) => {
         }
 
         const payload = { id: user._id };
-        const accessToken = jwt.sign(payload, process.env.ACCESS_TOKEN_SECRET, { expiresIn: "1hr" });
-        return res.json({ success: true, token: accessToken });
+        const accessToken = generateAccessToken(payload);
+        const refreshToken = generateRefreshToken(payload);
+
+        user.refreshToken = refreshToken;
+        return res.json({ success: true, token: accessToken, refreshToken });
     }
     catch (err) {
         console.log("There is some server issue!!");
@@ -131,33 +173,41 @@ app.post('/login', async (req, res) => {
     }
 })
 
-setInterval(cleanExpiredNotes, 4 * 60 * 60 * 1000); 
+app.post("/refresh-token", async (req, res) => {
+    const { refreshToken } = req.body;
 
-async function cleanExpiredNotes() {
-  const currentTime = Date.now();
+    if (!refreshToken) return res.json({ msg: "No refresh token provided" });
+    try {
+        const decodedUser = jwt.verify(refreshToken, process.env.REFRESH_TOKEN_SECRET);
+        const user = users.findById(decodedUser.id);
+        if (!user || user.refreshToken !== refreshToken) {
+            return res.status(403).json({ msg: "Invalid refresh token" });
+        }
 
-  try {
-    const result = await notes.deleteMany({
-      noteValidationTime: { $exists: true, $lt: currentTime },
-      $or: [
-        { noteViewOnce: { $ne: true } },
-        { noteViewOnce: { $exists: false } }
-      ],
-      $or: [
-        { noteViewAlways: { $ne: true } },
-        { noteViewAlways: { $exists: false } }
-      ]
-    });
-
-    if (result.deletedCount > 0) {
-      console.log(`✅ Auto-cleanup: Deleted ${result.deletedCount} expired notes.`);
-    } else {
-      console.log("ℹ️ Auto-cleanup: No expired notes found.");
+        const newAccessToken = generateAccessToken({ id: user._id });
+        return res.json({ token: newAccessToken });
     }
-  } catch (error) {
-    console.error("❌ Auto-cleanup failed:", error);
-  }
-}
+    catch (err) {
+        return res.json({ msg: "Refresh token error" });
+    }
+})
+
+app.post("/logout", async (req, res) => {
+    const { refreshToken } = req.body;
+    if (!refreshToken) return res.status(400).json({ msg: "No token provided" });
+
+    try {
+        const decoded = jwt.verify(refreshToken, process.env.REFRESH_TOKEN_SECRET);
+        const user = await users.findById(decoded.id);
+        if (user) {
+            user.refreshToken = null;
+            await user.save();
+        }
+        res.json({ msg: "Logged out" });
+    } catch (err) {
+        res.status(400).json({ msg: "Logout failed" });
+    }
+});
 
 app.post("/generateLink", authenticateToken, async (req, res) => {
     const body = req.body;
