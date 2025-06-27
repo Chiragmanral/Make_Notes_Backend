@@ -131,7 +131,7 @@ app.post('/login', async (req, res) => {
     }
 })
 
-setInterval(cleanExpiredNotes, 12 * 60 * 60 * 1000); 
+setInterval(cleanExpiredNotes, 4 * 60 * 60 * 1000); 
 
 async function cleanExpiredNotes() {
   const currentTime = Date.now();
