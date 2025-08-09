@@ -8,7 +8,6 @@ const jwt = require("jsonwebtoken");
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// app.use(cors());
 app.use(cors());
 
 app.use(express.urlencoded({ extended: false }));
@@ -72,14 +71,11 @@ async function cleanExpiredNotes() {
     try {
         const result = await notes.deleteMany({
             noteValidationTime: { $exists: true, $lt: currentTime },
-            $or: [
-                { noteViewOnce: { $ne: true } },
-                { noteViewOnce: { $exists: false } }
-            ],
-            $or: [
-                { noteViewAlways: { $ne: true } },
-                { noteViewAlways: { $exists: false } }
+            $and: [
+                { $or: [{ noteViewOnce: { $ne: true } }, { noteViewOnce: { $exists: false } }] },
+                { $or: [{ noteViewAlways: { $ne: true } }, { noteViewAlways: { $exists: false } }] }
             ]
+
         });
 
         if (result.deletedCount > 0) {
@@ -94,15 +90,15 @@ async function cleanExpiredNotes() {
 
 function authenticateToken(req, res, next) {
     const authHeader = req.headers['authorization'];
-    const token = authHeader && authHeader.split(' ')[1];
+    const accessToken = authHeader && authHeader.split(' ')[1];
 
-    if (!token) {
+    if (!accessToken) {
         return res.status(401).json({ msg: "Token missing", loggedIn: false });
     }
 
-    jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, (err, decodedUser) => {
+    jwt.verify(accessToken, process.env.ACCESS_TOKEN_SECRET, (err, decodedUser) => {
         if (err) {
-            console.error("JWT verification failed:", err.message);
+            console.log("JWT verification failed:", err.message);
 
             let msg = "Invalid or expired token";
             if (err.name === 'TokenExpiredError') {
@@ -127,8 +123,21 @@ function generateRefreshToken(payload) {
     return jwt.sign(payload, process.env.REFRESH_TOKEN_SECRET, { expiresIn: "7d" });
 }
 
-app.get("/isLoggedIn", authenticateToken, (req, res) => {
-    res.json({ loggedIn: true });
+app.post("/isTokensValid", (req, res) => {
+    const { accessToken, refreshToken } = req.body;
+
+    try {
+        const decodedUserByAccessToken = jwt.verify(accessToken, process.env.ACCESS_TOKEN_SECRET);
+        const decodedUserByRefreshToken = jwt.verify(refreshToken, process.env.REFRESH_TOKEN_SECRET);
+
+        if (decodedUserByAccessToken && decodedUserByRefreshToken) {
+            return res.json({ validTokens: true });
+        }
+        return res.json({ validTokens: false });
+    }
+    catch (err) {
+        return res.json({ validTokens: false });
+    }
 })
 
 app.post("/signup", async (req, res) => {
@@ -165,7 +174,8 @@ app.post('/login', async (req, res) => {
         const refreshToken = generateRefreshToken(payload);
 
         user.refreshToken = refreshToken;
-        return res.json({ success: true, token: accessToken, refreshToken });
+        await user.save();
+        return res.json({ success: true, accessToken: accessToken, refreshToken });
     }
     catch (err) {
         console.log("There is some server issue!!");
@@ -173,19 +183,19 @@ app.post('/login', async (req, res) => {
     }
 })
 
-app.post("/refresh-token", async (req, res) => {
+app.post("/refresh-access-token", async (req, res) => {
     const { refreshToken } = req.body;
 
     if (!refreshToken) return res.json({ msg: "No refresh token provided" });
     try {
         const decodedUser = jwt.verify(refreshToken, process.env.REFRESH_TOKEN_SECRET);
-        const user = users.findById(decodedUser.id);
+        const user = await users.findById(decodedUser.id);
         if (!user || user.refreshToken !== refreshToken) {
             return res.status(403).json({ msg: "Invalid refresh token" });
         }
 
         const newAccessToken = generateAccessToken({ id: user._id });
-        return res.json({ token: newAccessToken });
+        return res.json({ accessToken: newAccessToken });
     }
     catch (err) {
         return res.json({ msg: "Refresh token error" });
@@ -301,7 +311,7 @@ app.get("/myNotes", authenticateToken, async (req, res) => {
     }
     catch (err) {
         console.error("Error fetching user notes : ", err);
-        resizeBy.json({ error: "Failed to fetch notes" });
+        res.json({ error: "Failed to fetch notes" });
     }
 })
 
