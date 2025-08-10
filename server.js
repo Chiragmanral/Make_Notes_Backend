@@ -315,6 +315,43 @@ app.get("/myNotes", authenticateToken, async (req, res) => {
     }
 })
 
+app.post("/viewMyNote", authenticateToken, async (req, res) => {
+    const { noteUrl } = req.body;
+
+    try {
+        const note = await notes.findOne({ noteUrl, createdBy: req.user.id });
+
+        if (!note) {
+            return res.status(404).json({ msg: "Note not found or you are not the author" });
+        }
+
+        res.json({
+            text: note.noteText,
+            isPassword: note.notePassword ? "Password protected" : "No password"
+        });
+    }
+    catch (err) {
+        console.error("Error viewing note:", err);
+        res.status(500).json({ msg: "Internal server error" });
+    }
+});
+
+app.post("/deleteNote", authenticateToken, async (req, res) => {
+    const { noteUrl } = req.body;
+
+    try {
+        const deleted = await notes.deleteOne({ noteUrl, createdBy: req.user.id }); // ensure author only
+        if (deleted.deletedCount === 1) {
+            return res.json({ deleted: true });
+        }
+        return res.json({ deleted: false });
+    }
+    catch (err) {
+        console.log("Error failed to delete the note", err);
+        return res.json({ deleted: false });
+    }
+});
+
 app.listen(PORT, () => {
     console.log(`Server running on http://localhost:${PORT}`);
 })
